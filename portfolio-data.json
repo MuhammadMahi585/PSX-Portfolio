@@ -1,0 +1,18 @@
+{
+  "asOf": "2026-07-15T15:45:00+05:00",
+  "source": "reviewed JS InvestPro snapshot",
+  "holdings": [
+    {"symbol":"ENGROH","price":272.49,"dayChange":7.04},
+    {"symbol":"FFC","price":546.80,"dayChange":3.58},
+    {"symbol":"GCIL","price":35.91,"dayChange":0.88},
+    {"symbol":"HUBC","price":217.52,"dayChange":1.09},
+    {"symbol":"LUCK","price":442.45,"dayChange":3.77},
+    {"symbol":"MARI","price":654.84,"dayChange":0.89},
+    {"symbol":"MEBL","price":537.94,"dayChange":9.37},
+    {"symbol":"OGDC","price":320.99,"dayChange":1.49},
+    {"symbol":"SLM","price":24.36,"dayChange":0.37},
+    {"symbol":"SPSL","price":18.21,"dayChange":0.23},
+    {"symbol":"SYS","price":139.07,"dayChange":0.94},
+    {"symbol":"THCCL","price":65.90,"dayChange":1.17}
+  ]
+}

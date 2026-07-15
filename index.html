@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PSX Portfolio Dashboard</title>
 <link rel="stylesheet" href="/styles.css"></head><body>
-<header class="hero"><div class="eyebrow">PSX portfolio • 15 July 2026 snapshot</div><h1>Portfolio Performance Dashboard</h1><p>Interactive analysis of 12 holdings, cost basis, unrealized performance, concentration and estimated session contribution. All monetary values are PKR.</p></header>
+<header class="hero"><div class="eyebrow" id="snapshot-label">PSX portfolio • loading latest reviewed snapshot</div><h1>Portfolio Performance Dashboard</h1><p>Interactive analysis of 12 holdings, cost basis, unrealized performance, concentration and estimated session contribution. All monetary values are PKR.</p><p id="refresh-status" aria-live="polite">Checking for updated portfolio data…</p></header>
 <main class="shell">
 <section class="panel"><div class="head"><div><h2>Portfolio KPIs</h2><p>Reconciled directly from the uploaded JS InvestPro screenshots.</p></div><span class="pill">Review-only • No trade authorized</span></div><div class="kpis">
 <div class="kpi hero-card"><div class="label">Invested value</div><div class="value">PKR 64,084.11</div><div class="meta">Total cost basis</div></div><div class="kpi hero-card"><div class="label">Current value</div><div class="value">PKR 61,160.26</div><div class="meta">Snapshot market value</div></div><div class="kpi"><div class="label">Unrealized P/L</div><div class="value negative">−PKR 2,923.85</div><div class="meta">All 12 positions below cost</div></div><div class="kpi"><div class="label">Portfolio return</div><div class="value negative">−4.56%</div><div class="meta">Versus total cost</div></div><div class="kpi"><div class="label">Est. session gain</div><div class="value positive">+PKR 724.95</div><div class="meta">+1.20% from displayed moves</div></div><div class="kpi"><div class="label">Top-2 concentration</div><div class="value">54.89%</div><div class="meta">MEBL + FFC</div></div></div></section>
@@ -17,4 +17,99 @@ function list(){let s=q.value.toLowerCase();return D.filter(d=>(!s||`${d.symbol}
 document.querySelectorAll('th[data-k]').forEach(h=>h.onclick=()=>{let k=h.dataset.k;if(key===k)dir*=-1;else{key=k;dir=['symbol','company','sector'].includes(k)?1:-1}render()});[q,sec,status].forEach(e=>e.oninput=render);document.querySelector('#reset').onclick=()=>{q.value='';sec.value='';status.value='';key='weight';dir=-1;render()};
 function bars(id,data,val,fmt,cls=''){let max=Math.max(...data.map(val).map(Math.abs));document.querySelector(id).innerHTML=data.map((d,i)=>`<div class="row"><span class="name">${d.symbol||d.name}</span><div class="track"><div class="bar ${cls||(i<2?'gold':'')}" style="width:${Math.max(2,Math.abs(val(d))/max*100)}%"></div></div><span class="amount">${fmt(val(d))}</span></div>`).join('')}
 let byWeight=[...D].sort((a,b)=>b.weight-a.weight),byLoss=[...D].sort((a,b)=>a.pnl-b.pnl),bySession=[...D].sort((a,b)=>b.session-a.session);bars('#allocation',byWeight,d=>d.weight,v=>v.toFixed(1)+'%');bars('#losses',byLoss,d=>d.pnl,v=>'−'+Math.abs(v).toFixed(0),'red');bars('#session',bySession,d=>d.session,v=>'+'+v.toFixed(0));let sm={};D.forEach(d=>sm[d.sector]=(sm[d.sector]||0)+d.current);let sd=Object.entries(sm).map(([name,value])=>({name,value:value/total*100})).sort((a,b)=>b.value-a.value);bars('#sectors',sd,d=>d.value,v=>v.toFixed(1)+'%');render();
+</script><script>
+(() => {
+  const DATA_URL = '/portfolio-data.json';
+  const REFRESH_MS = 30 * 60 * 1000;
+  const statusEl = document.querySelector('#refresh-status');
+  const snapshotEl = document.querySelector('#snapshot-label');
+
+  const formatDate = value => new Intl.DateTimeFormat('en-PK', {
+    dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Karachi'
+  }).format(new Date(value));
+
+  function updateDashboard(asOf, source) {
+    const marketValue = D.reduce((sum, d) => sum + d.shares * d.price, 0);
+    const investedValue = D.reduce((sum, d) => sum + d.shares * d.cost, 0);
+    D.forEach(d => {
+      d.invested = d.shares * d.cost;
+      d.current = d.shares * d.price;
+      d.pnl = d.current - d.invested;
+      d.returnPct = d.invested ? d.pnl / d.invested * 100 : 0;
+      d.weight = marketValue ? d.current / marketValue * 100 : 0;
+      d.session = d.shares * d.day;
+    });
+
+    const pnl = marketValue - investedValue;
+    const returnPct = investedValue ? pnl / investedValue * 100 : 0;
+    const session = D.reduce((sum, d) => sum + d.session, 0);
+    const priorValue = marketValue - session;
+    const sessionPct = priorValue ? session / priorValue * 100 : 0;
+    const ranked = [...D].sort((a, b) => b.weight - a.weight);
+    const top2 = ranked.slice(0, 2).reduce((sum, d) => sum + d.weight, 0);
+    const top5 = ranked.slice(0, 5).reduce((sum, d) => sum + d.weight, 0);
+    const recovery = marketValue ? (investedValue / marketValue - 1) * 100 : 0;
+    const lossBreadth = D.filter(d => d.pnl < 0).length;
+    const biggestPkrLoss = [...D].sort((a, b) => a.pnl - b.pnl)[0];
+    const biggestPctLoss = [...D].sort((a, b) => a.returnPct - b.returnPct)[0];
+
+    const values = document.querySelectorAll('.kpis .value');
+    values[0].textContent = pkr(investedValue);
+    values[1].textContent = pkr(marketValue);
+    values[2].textContent = pkr(pnl);
+    values[3].textContent = `${returnPct.toFixed(2)}%`;
+    values[4].textContent = `${session >= 0 ? '+' : ''}${pkr(session)}`;
+    values[5].textContent = `${top2.toFixed(2)}%`;
+    values[2].className = `value ${pnl >= 0 ? 'positive' : 'negative'}`;
+    values[3].className = `value ${returnPct >= 0 ? 'positive' : 'negative'}`;
+    values[4].className = `value ${session >= 0 ? 'positive' : 'negative'}`;
+    document.querySelectorAll('.kpis .meta')[4].textContent = `${sessionPct >= 0 ? '+' : ''}${sessionPct.toFixed(2)}% estimated session move`;
+    document.querySelectorAll('.kpis .meta')[5].textContent = ranked.slice(0, 2).map(d => d.symbol).join(' + ');
+
+    const risk = document.querySelector('.risk');
+    risk.innerHTML = `
+      <div class="risk-card"><b>Top holding: ${ranked[0].symbol}</b><span>${ranked[0].weight.toFixed(2)}% of current portfolio value.</span></div>
+      <div class="risk-card"><b>Top five: ${top5.toFixed(2)}%</b><span>${ranked.slice(0, 5).map(d => d.symbol).join(', ')} dominate portfolio outcomes.</span></div>
+      <div class="risk-card"><b>Recovery required: ${recovery.toFixed(2)}%</b><span>Gain needed to return to cost, before fees and taxes.</span></div>
+      <div class="risk-card"><b>Loss breadth: ${lossBreadth} / ${D.length}</b><span>Positions currently below average cost.</span></div>
+      <div class="risk-card"><b>Largest PKR loss: ${biggestPkrLoss.symbol}</b><span>${pkr(biggestPkrLoss.pnl)} unrealized.</span></div>
+      <div class="risk-card"><b>Largest % loss: ${biggestPctLoss.symbol}</b><span>${biggestPctLoss.returnPct.toFixed(2)}% versus average cost.</span></div>`;
+
+    bars('#allocation', ranked, d => d.weight, v => v.toFixed(1) + '%');
+    bars('#losses', [...D].sort((a, b) => a.pnl - b.pnl), d => d.pnl, v => (v < 0 ? '−' : '+') + Math.abs(v).toFixed(0), 'red');
+    bars('#session', [...D].sort((a, b) => b.session - a.session), d => d.session, v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(0));
+    const sectorTotals = {};
+    D.forEach(d => sectorTotals[d.sector] = (sectorTotals[d.sector] || 0) + d.current);
+    const sectorRows = Object.entries(sectorTotals).map(([name, value]) => ({name, value: marketValue ? value / marketValue * 100 : 0})).sort((a, b) => b.value - a.value);
+    bars('#sectors', sectorRows, d => d.value, v => v.toFixed(1) + '%');
+    render();
+
+    snapshotEl.textContent = `PSX portfolio • ${formatDate(asOf)} snapshot`;
+    statusEl.textContent = `Latest reviewed data loaded from ${source || 'portfolio data file'}. Next on-page check in 30 minutes.`;
+  }
+
+  async function refreshPortfolio() {
+    statusEl.textContent = 'Checking for updated portfolio data…';
+    try {
+      const response = await fetch(`${DATA_URL}?v=${Date.now()}`, {cache: 'no-store'});
+      if (!response.ok) throw new Error(`Data request returned HTTP ${response.status}`);
+      const payload = await response.json();
+      if (!payload || !Array.isArray(payload.holdings) || !payload.asOf) throw new Error('Invalid portfolio data format');
+      const updates = new Map(payload.holdings.map(item => [item.symbol, item]));
+      D.forEach(d => {
+        const next = updates.get(d.symbol);
+        if (!next || !Number.isFinite(Number(next.price)) || !Number.isFinite(Number(next.dayChange))) return;
+        d.price = Number(next.price);
+        d.day = Number(next.dayChange);
+      });
+      updateDashboard(payload.asOf, payload.source);
+    } catch (error) {
+      updateDashboard('2026-07-15T15:45:00+05:00', 'embedded reviewed snapshot');
+      statusEl.textContent = `Live refresh unavailable; showing the embedded reviewed snapshot. ${error.message}`;
+    }
+  }
+
+  refreshPortfolio();
+  setInterval(refreshPortfolio, REFRESH_MS);
+})();
 </script></body></html>
