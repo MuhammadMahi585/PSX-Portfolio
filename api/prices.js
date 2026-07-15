@@ -1,17 +1,7 @@
-const HOLDINGS = [
-  "ENGROH",
-  "FFC",
-  "GCIL",
-  "HUBC",
-  "LUCK",
-  "MARI",
-  "MEBL",
-  "OGDC",
-  "SLM",
-  "SPSL",
-  "SYS",
-  "THCCL"
-];
+const GROUPS = {
+  1: ["ENGROH", "FFC", "GCIL", "HUBC", "LUCK", "MARI"],
+  2: ["MEBL", "OGDC", "SLM", "SPSL", "SYS", "THCCL"]
+};
 
 function normalizeQuote(symbol, raw) {
   if (!raw || raw.status === "error" || raw.code) {
@@ -23,10 +13,10 @@ function normalizeQuote(symbol, raw) {
 
   const price = Number(raw.close ?? raw.price);
   const previousClose = Number(raw.previous_close);
-  const providerChange = Number(raw.change);
+  const suppliedChange = Number(raw.change);
 
-  const dayChange = Number.isFinite(providerChange)
-    ? providerChange
+  const dayChange = Number.isFinite(suppliedChange)
+    ? suppliedChange
     : Number.isFinite(previousClose)
       ? price - previousClose
       : NaN;
@@ -55,36 +45,35 @@ function normalizeQuote(symbol, raw) {
 }
 
 export default async function handler(request, response) {
-  response.setHeader(
-    "Cache-Control",
-    "no-store, max-age=0"
-  );
+  response.setHeader("Cache-Control", "no-store, max-age=0");
 
   const apiKey = process.env.TWELVE_DATA_API_KEY;
 
   if (!apiKey) {
     return response.status(500).json({
-      error:
-        "TWELVE_DATA_API_KEY is not configured in Vercel"
+      error: "TWELVE_DATA_API_KEY is not configured in Vercel"
+    });
+  }
+
+  const groupNumber = Number(request.query.group || 1);
+  const symbols = GROUPS[groupNumber];
+
+  if (!symbols) {
+    return response.status(400).json({
+      error: "group must be 1 or 2"
     });
   }
 
   try {
-    const url = new URL(
-      "https://api.twelvedata.com/quote"
-    );
+    const url = new URL("https://api.twelvedata.com/quote");
 
-    url.searchParams.set(
-      "symbol",
-      HOLDINGS.join(",")
-    );
-
+    url.searchParams.set("symbol", symbols.join(","));
     url.searchParams.set("exchange", "XKAR");
     url.searchParams.set("apikey", apiKey);
 
     const providerResponse = await fetch(url, {
       headers: {
-        accept: "application/json"
+        Accept: "application/json"
       },
       signal: AbortSignal.timeout(20000)
     });
@@ -103,27 +92,23 @@ export default async function handler(request, response) {
       });
     }
 
-    const results = HOLDINGS.map(symbol => {
-      const raw =
+    const results = symbols.map((symbol) => {
+      const rawQuote =
         payload[symbol] ||
         payload[`${symbol}:XKAR`] ||
         (payload.symbol === symbol ? payload : null);
 
-      return normalizeQuote(symbol, raw);
+      return normalizeQuote(symbol, rawQuote);
     });
 
-    const quotes = results.filter(
-      item => !item.error
-    );
-
-    const unavailable = results.filter(
-      item => item.error
-    );
+    const quotes = results.filter((item) => !item.error);
+    const unavailable = results.filter((item) => item.error);
 
     if (!quotes.length) {
       return response.status(502).json({
         error:
-          "No requested PSX symbols were returned by the current Twelve Data plan",
+          `No group ${groupNumber} symbols are available ` +
+          "on the current Twelve Data plan",
         unavailable
       });
     }
@@ -131,12 +116,13 @@ export default async function handler(request, response) {
     return response.status(200).json({
       asOf: new Date().toISOString(),
       source: "Twelve Data",
+      group: groupNumber,
       quotes,
       unavailable
     });
   } catch (error) {
     return response.status(500).json({
-      error: error.message
+      error: error.message || "Unable to download prices"
     });
   }
 }

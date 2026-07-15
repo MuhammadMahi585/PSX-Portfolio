@@ -88,24 +88,47 @@ let byWeight=[...D].sort((a,b)=>b.weight-a.weight),byLoss=[...D].sort((a,b)=>a.p
     statusEl.textContent = `Latest reviewed data loaded from ${source || 'portfolio data file'}. Next on-page check in 30 minutes.`;
   }
 
+  const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+
+  async function requestGroup(group) {
+    const response = await fetch(`${DATA_URL}?group=${group}&v=${Date.now()}`, {cache: 'no-store'});
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || `Group ${group} failed with HTTP ${response.status}`);
+    if (!payload || !Array.isArray(payload.quotes) || !payload.asOf) throw new Error(`Group ${group} returned invalid quote data`);
+    return payload;
+  }
+
+  function applyQuotes(quotes) {
+    const updates = new Map(quotes.map(item => [item.symbol, item]));
+    D.forEach(d => {
+      const next = updates.get(d.symbol);
+      if (!next || !Number.isFinite(Number(next.price)) || !Number.isFinite(Number(next.dayChange))) return;
+      d.price = Number(next.price);
+      d.day = Number(next.dayChange);
+    });
+  }
+
   async function refreshPortfolio() {
-    statusEl.textContent = 'Checking for updated portfolio data…';
+    statusEl.textContent = 'Loading the first six market prices…';
     try {
-      const response = await fetch(`${DATA_URL}?v=${Date.now()}`, {cache: 'no-store'});
-      if (!response.ok) throw new Error(`Data request returned HTTP ${response.status}`);
-      const payload = await response.json();
-      if (!payload || !Array.isArray(payload.holdings) || !payload.asOf) throw new Error('Invalid portfolio data format');
-      const updates = new Map(payload.holdings.map(item => [item.symbol, item]));
-      D.forEach(d => {
-        const next = updates.get(d.symbol);
-        if (!next || !Number.isFinite(Number(next.price)) || !Number.isFinite(Number(next.dayChange))) return;
-        d.price = Number(next.price);
-        d.day = Number(next.dayChange);
-      });
-      updateDashboard(payload.asOf, payload.source);
+      const firstGroup = await requestGroup(1);
+      applyQuotes(firstGroup.quotes);
+      updateDashboard(firstGroup.asOf, firstGroup.source);
+      statusEl.textContent = 'First group loaded. Waiting 61 seconds for the free API limit to reset…';
+
+      await wait(61000);
+
+      statusEl.textContent = 'Loading the remaining six market prices…';
+      const secondGroup = await requestGroup(2);
+      applyQuotes(secondGroup.quotes);
+      updateDashboard(secondGroup.asOf, secondGroup.source);
+
+      const unavailable = [...(firstGroup.unavailable || []), ...(secondGroup.unavailable || [])];
+      statusEl.textContent = unavailable.length
+        ? `Refresh completed; ${unavailable.length} symbol(s) were unavailable on the current API plan.`
+        : 'All 12 market prices loaded. Next refresh in 30 minutes.';
     } catch (error) {
-      updateDashboard('2026-07-15T15:45:00+05:00', 'embedded reviewed snapshot');
-      statusEl.textContent = `Live refresh unavailable; showing the embedded reviewed snapshot. ${error.message}`;
+      statusEl.textContent = `Price refresh stopped: ${error.message}. Existing displayed values were preserved.`;
     }
   }
 
