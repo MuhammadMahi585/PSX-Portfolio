@@ -19,7 +19,7 @@ function bars(id,data,val,fmt,cls=''){let max=Math.max(...data.map(val).map(Math
 let byWeight=[...D].sort((a,b)=>b.weight-a.weight),byLoss=[...D].sort((a,b)=>a.pnl-b.pnl),bySession=[...D].sort((a,b)=>b.session-a.session);bars('#allocation',byWeight,d=>d.weight,v=>v.toFixed(1)+'%');bars('#losses',byLoss,d=>d.pnl,v=>'−'+Math.abs(v).toFixed(0),'red');bars('#session',bySession,d=>d.session,v=>'+'+v.toFixed(0));let sm={};D.forEach(d=>sm[d.sector]=(sm[d.sector]||0)+d.current);let sd=Object.entries(sm).map(([name,value])=>({name,value:value/total*100})).sort((a,b)=>b.value-a.value);bars('#sectors',sd,d=>d.value,v=>v.toFixed(1)+'%');render();
 </script><script>
 (() => {
-  const DATA_URL = '/portfolio-data.json';
+  const DATA_URL = "/api/prices";
   const REFRESH_MS = 30 * 60 * 1000;
   const statusEl = document.querySelector('#refresh-status');
   const snapshotEl = document.querySelector('#snapshot-label');
